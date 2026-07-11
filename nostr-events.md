@@ -26,7 +26,7 @@ Kinds 30000–39999 are **addressable events** (formerly their own NIP-33, since
 
 ---
 
-## HomeHarvest event kinds
+## HarvestHive event kinds
 
 | Kind | Purpose | Standard |
 |---|---|---|
