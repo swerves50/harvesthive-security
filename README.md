@@ -23,19 +23,19 @@ If you find a discrepancy between what's here and what the live app actually doe
 
 ## Key storage — `keystore.ts`
 
-When you create a HarvestHive account (or import an existing NOSTR identity), your private key is encrypted before it ever touches disk:
+When you create a HarvestHive account (or import an existing NOSTR identity), your private key is encrypted before it ever touches disk — automatically, with no password required:
 
-- **AES-256-GCM** for the encryption itself — the current standard for authenticated symmetric encryption.
-- **PBKDF2 with 310,000 iterations** (SHA-256) to derive the encryption key from your password — in line with [OWASP's 2023 minimum recommendation](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2), making brute-force password guessing computationally expensive.
-- **A fresh random salt and IV on every encryption** — the same password never produces the same ciphertext twice.
-- **The Web Crypto API**, native to the browser — no third-party crypto library in the trust chain.
-- **A wrong password fails silently** (returns `null`) rather than leaking any information about *why* it failed.
+- **Device-bound encryption.** A non-extractable AES-GCM 256 key is generated using the Web Crypto API — `extractable: false` means the raw key bytes can never be exported, not by an attacker, not even by HarvestHive's own code. The key can only ever be *used* for encryption/decryption, never read out.
+- **The key lives in IndexedDB**, alongside the encrypted ciphertext. Browsers support storing non-extractable `CryptoKey` objects directly via the structured clone algorithm — this is solid, well-supported behavior for symmetric AES keys across all major browsers.
+- **No password, ever.** Nothing to remember, nothing to lose separately from the device itself, nothing an attacker can phish out of you.
+- **A fresh random IV on every encryption.**
+- **Unencrypted fallback, only when IndexedDB is genuinely unavailable** in the browsing context (rare — some older or unusual browser configurations). In that case the key is stored in plain `localStorage` instead, under a distinct key name so it's never silently confused with a device-bound entry.
 
-The encrypted blob is stored in `localStorage`, scoped to your browser/device. It never leaves your device as part of this flow — HarvestHive's servers only ever see your public key (npub), which is, by design, public information on the NOSTR network regardless of what app you use.
+**What this protects against:** storage-at-rest theft that isn't happening through live page JavaScript — a malicious browser extension scanning `localStorage`, session-replay/telemetry tooling that captures storage dumps, disk or backup access, a stolen or synced browser profile.
 
-**One honest caveat:** if you choose not to set a password (no backup configured), the key is stored *unencrypted* — see `storePrivateKeyUnencrypted()` / `retrievePrivateKeyUnencrypted()` in the file. This is a deliberate launch-time tradeoff, not an oversight — the app shows a clear warning recommending you set a backup password. If you're relying on this repo to decide how much to trust your key storage, set a password.
+**What this does *not* protect against, and no purely browser-side approach can:** an in-page XSS vulnerability. XSS runs as the page itself, and can call the exact same decrypt operation the app uses. If you're weighing how much to trust key storage against a determined attacker who's compromised the page's own JavaScript, this doesn't change that calculus — it protects the data at rest, not the live page's execution.
 
-**Note on reading the code:** `keystore.ts` is copied byte-for-byte from the live app, including its import of `activeConfig` from the app's internal config module (used only to prefix the `localStorage` key with the current community tag). That import won't resolve if you try to compile this file standalone — it isn't meant to run outside the app, only to be read and compared against what's actually deployed.
+**Note on reading the code:** `keystore.ts` is copied byte-for-byte from the live app, including its import of `activeConfig` from the app's internal config module (used only to prefix storage keys with the current community tag). That import won't resolve if you try to compile this file standalone — it isn't meant to run outside the app, only to be read and compared against what's actually deployed.
 
 ## Session handling — `session.ts`
 
@@ -82,7 +82,7 @@ HarvestHive is built on real NOSTR events published to a relay — not a proprie
 - [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md) — Lightning zaps
 - [NIP-59](https://github.com/nostr-protocol/nips/blob/master/59.md) — gift wrap, underlying NIP-17's sender privacy
 
-NIP-07 (browser extension signing) is on the roadmap but not yet supported — for now, HarvestHive generates and manages your key as described above rather than delegating to an extension like Alby or nos2x.
+NIP-07 (browser extension signing) was investigated but deliberately not built yet — not because of any technical blocker, but because it's a real, separate piece of work (it would touch every signing and encryption call site in the app, not just key storage) and we'd rather build it in response to real user demand than speculatively. For now, HarvestHive generates and manages your key as described above rather than delegating to an extension like Alby or nos2x.
 
 ---
 
